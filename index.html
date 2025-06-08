@@ -516,11 +516,18 @@ function reloadCurrentStream() {
 
 function setupPlayer(url) {
     clearError();
-    setLiveDotInactive(); // Set inactive initially
+    setLiveDotInactive();
 
     if (hls) {
         hls.destroy();
         hls = null;
+    }
+
+    // Clean and validate URL
+    url = url.trim();
+    if (!url) {
+        showError('Please enter a valid HLS .m3u8 URL');
+        return;
     }
 
     // Force muted state and autoplay for initial load
@@ -528,7 +535,6 @@ function setupPlayer(url) {
     video.autoplay = true;
 
     if (canPlayHlsNatively()) {
-        // Safari and native HLS support
         video.src = url;
         video.load();
         video.play().catch(function(error) {
@@ -537,124 +543,92 @@ function setupPlayer(url) {
         });
         setupContinuousPlay();
     } else if (Hls.isSupported()) {
-        hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 30,
-            maxBufferLength: 60,
-            maxMaxBufferLength: 600,
-            maxBufferSize: 60 * 1000 * 1000,
-            liveSyncDurationCount: 3,
-            liveMaxLatencyDurationCount: 10,
-            liveDurationInfinity: true,
-            autoStartLoad: true,
-            startPosition: -1,
-            debug: false,
-            manifestLoadingTimeOut: 20000,
-            manifestLoadingMaxRetry: 5,
-            levelLoadingTimeOut: 20000,
-            levelLoadingMaxRetry: 5,
-            fragLoadingTimeOut: 20000,
-            fragLoadingMaxRetry: 5,
-            autoLevelEnabled: true,
-            autoLevelCapping: -1,
-            startLevel: -1,
-            abrEwmaDefaultEstimate: 500000,
-            abrEwmaFastLive: 3,
-            abrEwmaSlowLive: 9,
-            abrBandWidthFactor: 0.95,
-            abrBandWidthUpFactor: 0.7,
-            abrMaxWithRealBitrate: true,
-            xhrSetup: function(xhr, url) {
-                xhr.withCredentials = false;
-                xhr.setRequestHeader('Origin', 'https://www.bdixtv24.xyz');
-                xhr.setRequestHeader('Referer', 'https://www.bdixtv24.xyz/');
-                xhr.setRequestHeader('Cache-Control', 'no-cache');
-                xhr.setRequestHeader('Pragma', 'no-cache');
-                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-                xhr.setRequestHeader('Accept', '*/*');
-
-                // Check cache first
-                if (videoCache.has(url)) {
-                    return videoCache.get(url);
-                }
-
-                // Store response in cache
-                const originalOpen = xhr.open;
-                xhr.open = function() {
-                    xhr.addEventListener('load', () => {
-                        if (xhr.status === 200) {
-                            videoCache.set(url, xhr.response);
-                        }
-                    });
-                    return originalOpen.apply(xhr, arguments);
-                };
-            }
-        });
-
-        // Add quality level change handlers
-        hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
-            console.log('Quality Level Changed to:', data.level);
-        });
-
-        hls.on(Hls.Events.LEVEL_LOADING, function(event, data) {
-            console.log('Loading quality level:', data.level);
-        });
-
-        hls.loadSource(url);
-        hls.attachMedia(video);
-        
-        hls.on(Hls.Events.MANIFEST_PARSED, function() {
-            console.log('Manifest parsed, qualities available:', hls.levels.length);
-            video.play().catch(function(error) {
-                console.log('Initial playback failed, retrying:', error);
-                video.muted = true;
-                setTimeout(() => {
-                    video.play().catch(console.log);
-                }, 100);
+        try {
+            hls = new Hls({
+                debug: false,
+                enableWorker: true,
+                lowLatencyMode: true,
+                autoStartLoad: true,
+                startLevel: -1,
+                abrEwmaFastLive: 3,
+                abrEwmaSlowLive: 9,
+                abrEwmaFastVoD: 3,
+                abrEwmaSlowVoD: 9,
+                maxBufferSize: 30 * 1000 * 1000,
+                maxBufferLength: 40,
+                maxMaxBufferLength: 600,
+                manifestLoadingTimeOut: 15000,
+                manifestLoadingMaxRetry: 6,
+                manifestLoadingRetryDelay: 1000,
+                levelLoadingTimeOut: 15000,
+                levelLoadingMaxRetry: 6,
+                levelLoadingRetryDelay: 1000,
+                fragLoadingTimeOut: 20000,
+                fragLoadingMaxRetry: 6,
+                fragLoadingRetryDelay: 1000,
+                backBufferLength: 30,
+                startFragPrefetch: true,
+                testBandwidth: true,
+                progressive: true,
+                lowLatencyMode: false
             });
-            setupContinuousPlay();
-        });
 
-        // Add level loading handler
-        hls.on(Hls.Events.LEVEL_LOADED, function() {
-            console.log('Stream level loaded, attempting playback...');
-            if (video.paused) {
-                video.play().catch(console.log);
-            }
-        });
-        
-        hls.on(Hls.Events.ERROR, function(event, data) {
-            console.log('HLS Error:', event, data);
-            setLiveDotInactive();
-            if (data.fatal) {
-                switch(data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                        console.log('Network error, checking cache...');
-                        if (videoCache.size > 0) {
-                            console.log('Using cached data');
-                            hls.startLoad();
-                        } else {
-                            showError("Network error encountered, trying to recover...");
-                            setTimeout(() => hls.startLoad(), 1000);
-                        }
-                        break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                        showError("Media error encountered, trying to recover...");
-                        hls.recoverMediaError();
-                        break;
-                    default:
-                        if (videoCache.size > 0) {
-                            console.log('Attempting to use cached data');
-                            hls.startLoad();
-                        } else {
-                            showError("An unrecoverable error occurred. Please try a different stream.");
+            hls.loadSource(url);
+            hls.attachMedia(video);
+            
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                console.log('Manifest parsed, qualities available:', hls.levels.length);
+                tryAutoplay();
+                setupContinuousPlay();
+                clearError();
+            });
+
+            let retryCount = 0;
+            const MAX_RETRIES = 5;
+
+            hls.on(Hls.Events.ERROR, function(event, data) {
+                console.log('HLS Error:', data.type, data.details);
+                if (data.fatal) {
+                    switch(data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            if (retryCount < MAX_RETRIES) {
+                                retryCount++;
+                                showError(`Network error, attempting recovery (${retryCount}/${MAX_RETRIES})...`);
+                                setTimeout(() => {
+                                    hls.startLoad();
+                                }, 1000 * retryCount);
+                            } else {
+                                showError('Maximum retry attempts reached. Please check your connection.');
+                            }
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.log('Media error, attempting recovery...');
+                            showError("Media error. Recovering...");
+                            hls.recoverMediaError();
+                            break;
+                        default:
+                            showError("An error occurred while loading the video.");
+                            console.error('Fatal error:', data);
                             hls.destroy();
-                        }
-                        break;
+                            break;
+                    }
                 }
-            }
-        });
+            });
+
+            // Add quality level monitoring
+            hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
+                console.log('Quality level switched to:', data.level);
+            });
+
+            // Add buffer monitoring
+            hls.on(Hls.Events.BUFFER_APPENDED, function(event, data) {
+                console.log('Buffer appended:', data);
+            });
+
+        } catch (error) {
+            console.error('Error setting up HLS:', error);
+            showError("Failed to initialize player: " + error.message);
+        }
     } else {
         showError('Your browser does not support HLS playback.');
     }
@@ -768,7 +742,7 @@ loadButton.click();
 
 // On page load, set default URL and setup player
 window.addEventListener('load', () => {
-    const streamUrl = 'https://www.bdixtv24.xyz/proxy.php?url=https%3A%2F%2Fdai.fancode.com%2Fprimary%2F127240_english_hls_78133ta-di_h264%2F360p.m3u8';
+    const streamUrl = 'https://funn-g1163.huibo.tv/GS/H3106/chunks.m3u8?p=48&cf=1749376911&d=&ip=126.37.212.112&e=1799377511&h=ab0bfc5e2cb04fe98ce3f3d66fa9194f';
     urlInput.value = streamUrl;
     video.muted = true;
     video.autoplay = true;
@@ -874,4 +848,3 @@ document.addEventListener('mousedown', (event) => {
 </script>
 </body>
 </html>
-
