@@ -52,7 +52,7 @@
   <script>
     (() => {
       "use strict";
-      const DEFAULT_SOURCE = "http://103.151.60.162:2122/play/a027/index.m3u8?hls";
+      const DEFAULT_SOURCE = "http://103.151.60.162:2122/play/a027/index.m3u8";
       const query = new URLSearchParams(window.location.search);
       const source = (query.get("src") || DEFAULT_SOURCE).trim();
       const parent = document.getElementById("clapper-player-screen");
