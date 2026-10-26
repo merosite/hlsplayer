@@ -52,7 +52,7 @@
   <script>
     (() => {
       "use strict";
-      const DEFAULT_SOURCE = "http://103.151.60.162:2122/play/a027/index.m3u8";
+      const DEFAULT_SOURCE = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQRlIH857G5wTDRC6htzuUU0NQGSI8YQwC-LXv0SCFfDw&s";
       const query = new URLSearchParams(window.location.search);
       const source = (query.get("src") || DEFAULT_SOURCE).trim();
       const parent = document.getElementById("clapper-player-screen");
